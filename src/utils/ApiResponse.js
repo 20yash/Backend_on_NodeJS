@@ -12,3 +12,5 @@ class ApiResponse{
         //status code 500 to 599 is server error responses
     }
 }
+
+export {ApiResponse}

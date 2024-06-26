@@ -1,3 +1,7 @@
+//asyncHandler files creates a method and exports it.
+//asyncHandler file is a helder file in whic we have req, res, next and we handle it using promises
+//in case we get any problem, we have a wrapper here, everytime we need not to place everything in promises-try catch
+
 //explaining asynchandler with both Promises and try-catch
 
 
@@ -26,13 +30,11 @@
 //using promises here; does the same thing
 
 const asyncHandler =(requestHandler)=>{
-    (req,res,next)=>{
-        Promise.resolve(requestHandler(req,res,next)).catch((error)=>next(error))
+    return (req,res,next)=>{
+        Promise.resolve(requestHandler(req,res,next)).catch
+        ((err)=>next(err))
     }
 }
-
-
-
 
 
 

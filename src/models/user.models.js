@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
     },
     coverImage:{
         type:String,//cloudinary url, similary to aws service
-        required:true
+        // required:true
     },
     watchHistory:[{
         type:mongoose.Schema.Types.ObjectId,
@@ -42,6 +42,7 @@ const userSchema = new mongoose.Schema({
         required:[true,'password is required']
     },
     refreshToken:{
+        type:String
 
     }
 },{timestamps:true})
@@ -51,7 +52,7 @@ userSchema.pre("save",async function(next) {//we have used the function, it know
     if(!this.isModified("password")){
         return next()
     }
-    this.password=bcrypt.hash(this.password,10)
+    this.password=await bcrypt.hash(this.password,10)
     next()
 
 })
@@ -68,9 +69,9 @@ userSchema.methods.generateAccessToken = function(){
             username:this.username,
             fullname:this.fullname
         },
-        process.env.ACCESS_TOKEN_SECRET,
+        process.env.ACCESS_TOKEN_SECRET || 'chai-aur-code',
         {
-            expiresIn:process.env.ACCESS_TOKEN_EXPIRY
+            expiresIn:process.env.ACCESS_TOKEN_EXPIRY || '1d'
         }
     )
 }
@@ -79,9 +80,9 @@ userSchema.methods.generateRefreshToken = function(){
         {
             _id:this._id,//INFO IN REFRESH TOKEN IS LESS
         },
-        process.env.REFRESH_TOKEN_SECRET,
+        process.env.REFRESH_TOKEN_SECRET || 'chai-aur-backend',
         {
-            expiresIn:process.env.REFRESH_TOKEN_EXPIRY
+            expiresIn:process.env.REFRESH_TOKEN_EXPIRY || '10d'
         }
     )
 }
