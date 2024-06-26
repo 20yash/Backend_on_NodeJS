@@ -13,6 +13,8 @@ import { ApiError } from "../utils/ApiError.js"
 import { User } from "../models/user.models.js"//since user model directly contacts with mongoose, we can use this to check for validity of user present or not
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
+import jwt from "jsonwebtoken"
+
 
 
 //we wil using refresh and access token multiple times, therefore we are creating a method for it
@@ -294,4 +296,166 @@ const logInUser = asyncHandler(async(req,res)=>{
 
     })
 
-export {registerUser,logInUser,logOutUser}
+
+    //___logout for user ends here___
+    //___creating endpoint for refresh access token___
+
+    //we are creating an endpoint here so that whenever the user hits this endpoint, it refreshesh the access token
+    //we will send our refresh token with the request; if both matches (one present in db and one refresh token received)
+    // we will provide a new refresh token
+    //new access token in cookies and new refresh token is saved in the memory; this is what we will do here
+
+    const refreshAccssToken = asyncHandler(async(req,res)=>{
+        //we can take refresh token directly from cookies
+       const incomingRefreshToken = req.cookies.refreshToken ||req.body.refreshToken
+
+       if(!incomingRefreshToken) {
+        new ApiError(401,"unauthorised access")
+       }
+
+       try {
+        const decodedToken = jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET)
+ 
+        //since we have only _id in refresh token; writing a query to get access of user from MongoDB
+ 
+        const user = await User.findById(decodedToken?._id)
+ 
+        if(!user){
+         throw new ApiError(401,"Invalid refresh Token")
+        }
+ 
+        //now comparing both original refresh token (defined in user)and incoming refresh token
+ 
+        if(incomingRefreshToken !== user?.refreshToken){
+         throw new ApiError(401,"invalid refresh token/Expired Token")
+        }
+ 
+        //now generating a new refresh token using the method, generate a new access and refresh token
+        const {accessToken,newRefreshToken}= await generateAccessAndRefreshToken(user._id)
+        const options = {
+         httpOnly:true,
+         secure:true
+        }
+        return res(200)
+        .cookie("accessToken",accessToken,options)
+        .cookie("refreshToken",newRefreshToken,options)
+        .json(
+         new ApiResponse(200,
+             {accessToken,refreshToken:newRefreshToken},"Access token refreshed successfully"))
+       } catch (error) {
+        throw new ApiError(401,error?.message||"invalid refresh token, try again")
+        
+       }
+    })
+
+    //_____________Mnaging subscription category now_____________
+
+    const changeCurrentPassword = asyncHandler(async(req,res)=>{
+        const{oldPassword, newPassword} = req.body
+        //if auth middleware is running, it is confirmed that req.user is running and user is logged in for sure
+
+        const user = await User.findById(req.user?._id)
+        const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
+
+
+        if(!isPasswordCorrect){
+            throw new ApiError(400,"invalid old password")
+        }
+
+        user.password = newPassword
+        await user.save({validateBeforeSave:false})
+
+        return res.status(200).json(new ApiResponse(200,{},"password change success"))
+
+    })
+
+
+        //_____getting current user after changing the password______
+
+        const getCurrentUser = asyncHandler(async(req,res)=>{
+            return res.status(200).json((new ApiResponse(200,req.user,"current user fetched successfully")))
+            //because middleware is running at our request,user is injected in the object here
+
+        })
+
+        //____thinking for more scenerios, as youtube does not allow to change username____
+
+        const updateAccountDetails= asyncHandler(async(req,res)=>{
+            const{fullname,email}=req.body
+
+            if(!(fullname || email)){
+                throw new ApiError(400,"all mandatory fields are required")
+            }
+            const user = await User.findByIdAndUpdate(req.user?._id,
+                {
+                    $set:{
+                        fullname:fullname,//we can also write directly fullname
+                        email:email//we can also write directly email
+                    }.select("-password")
+                },
+                {new:true})
+            //this takes 3 parameter;one is query, other is object which is empty and third isnew:true, this means data info which is updated is returned to the user
+            
+            //now returning this
+
+            return res.status(200).json(new ApiResponse(200,user,"account details are saved here"))
+        })
+
+
+        //______updating avatar_______
+
+        const updateAvatar = asyncHandler(async(req,res)=>{
+            const avatarLocalPath = req.file?.path
+
+            if(!avatarLocalPath){
+                throw new ApiError(400,"avatar file is missing")
+            }
+
+            const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+            if(!(avatar.url)){
+                throw new ApiError(400,"coudn't find avatar URL path")
+            }
+
+            const updatingAvatar = await findByIdAndUpdate(req.file?._id,{
+                $set:{
+                    avatar:avatar.url
+                }
+            },
+            {new:true}
+        ).select("-password")
+
+            return res.status(200).json(new ApiResponse(200,updatingAvatar,"avatar details uploaded on cloudinary"))
+
+        })
+
+
+        //________updating cover Image_______
+
+        const updateUserCoverImage = asyncHandler(async(req,res)=>{
+
+            const coverImagePath = req.file?._id
+
+            if(!coverImagePath){
+                throw new ApiError(400,"cover Image file is missing")
+            }
+
+            const coverImage = await uploadOnCloudinary(coverImagePath)
+
+            if(!(coverImage.url)){
+                throw new ApiError(400,"cover Image url Path coudn't be found")
+            }
+
+            const updatingCoverImage = await findByIdAndUpdate(req.user?._id,
+                {
+                    $set:{
+                        coverImage:coverImage.url
+                    }
+                },
+                {new:true}.select("-password"))
+
+            return res.status(200).json(new ApiResponse(200,updatingCoverImage,"cover image is updated successfully")) 
+        })
+
+
+export {registerUser,logInUser,logOutUser,refreshAccssToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateAvatar,updateUserCoverImage}
