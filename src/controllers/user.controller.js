@@ -1,4 +1,4 @@
-
+//req.User._id//here in this, we get the string (343s436as6f6434344b1)(refer to any id of mongoDB)the entire id which starts as 'ObjectId('343s436as6f6434344b1')',mongoose behind the scene converts this into Mongodb ID
 
 
 //we get all data from req.body(if we are getting data from JSON or form, we receive it from req.body)
@@ -404,7 +404,7 @@ const logInUser = asyncHandler(async(req,res)=>{
 
         //______updating avatar_______
 
-        const updateAvatar = asyncHandler(async(req,res)=>{
+        const updateUserAvatar = asyncHandler(async(req,res)=>{
             const avatarLocalPath = req.file?.path
 
             if(!avatarLocalPath){
@@ -458,4 +458,168 @@ const logInUser = asyncHandler(async(req,res)=>{
         })
 
 
-export {registerUser,logInUser,logOutUser,refreshAccssToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateAvatar,updateUserCoverImage}
+        //_______getting channel profile change here_____
+
+        const getUserChannelProfile = asyncHandler(async(req,res)=>{
+            //whenever we require profile, we visit the url; here we get the url from req.params not from req.body
+
+            const{username} =  req.params
+            if(!username.trim()){
+                throw new ApiError(400,"username is missing")
+            }
+
+            // User.find({username})//this is also fine; we can run this simple query and find the username
+            //we also directly apply aggregation pipeline; we have match field; it will find one particular document from entire document
+            
+            // (left join opeartion)
+            //aggregate is a method which takes in array and further piplelines are arranged this way[{},{},{}]
+            const channel = await User.aggregate([
+                {
+                    $match:{//now using match filed to find the username and changing to lower case just for safety
+                        username:username?.toLowerCase()
+                    }//now based on this document, we will lookup(find operation), we will now find subscribers of the channel
+                },
+                {
+                    $lookup:{//this whole lookup operation is to find total subscribers of the channel
+                        from:"subscriptions",//in subscription model, we have defined subscription;this will be in lowercase and in plural
+                        localField:"_id",
+                        foreignField:"channel",//remember last video; select the channels to find subscribers,finding subscriber here
+                        as:"subscribers"
+                    }
+                },
+                {
+                    $lookup:{//this second lookup operation is to check total number of channels subscribed to
+                        from:"subscriptions",//refer models for subscription, it is changed into lowecase and made plural
+                        localField:"_id",
+                        foreignField:"subscriber",//foreign field is subscribers
+                        as:"subscribedTo"//those data which i have subscribed to; therefore we gave the name subscribedTo; name can vary
+                    }
+                },
+                
+                {//we are having 2 lookup filed ; now adding both the pipelines;adds few more additional fields also
+                    $addFields:{
+                        subscriberCount:{
+                            $size:"$subscribers"//size field calculates or counts; use dollar before subscribers as this is a field now
+                        },
+                        channelsSubscribedToCount:{
+                            $size:"$subscribedTo"
+
+                        },//we have injected 2 more informations; subscriberCount and chaneelSubscribedToCount to the user model
+                        
+                        isSubscribed:{
+                            //this new field is to mark the subscriber button as subscribed or not;will pass true or false value of the flags to the front end engineer
+                            $cond:{//we have 3 parameters in condition; if, then and else
+                                if:{//checking whetehr the user is there or not; using $ in which claculates within objects and array both
+                                    $in:[req.user?._id,"$subscribers.subscriber"]//checking subscriber value whether it is present or not within the field subscriber
+                                },
+                                then:true,
+                                else:false
+
+                            }
+                        }
+                    }
+                },
+                {
+                    //this last pipeline here, projecting the values;not all values are given, but selected values only to be provided, value 1 will be projected to forwarded only
+                    $project:{
+                        fullname:1,//flag value is 1, fullname will be projected
+                        username:1,
+                        subscriberCount:1,
+                        channelsSubscribedToCount:1,
+                        isSubscribed:1,
+                        avatar:1,
+                        coverImage:1,
+                        email:1
+                    }
+                }
+            ])
+
+
+
+
+            //logging the value of pipelines here
+            console.log(channel);//check
+
+
+            //checking whether we have data in channel or not
+
+            if(!channel?.length){
+                throw new ApiError(404,"channel does not exist; all pipelines might not be executed ")
+            }
+
+
+            return res.status(200).json(new ApiResponse(200,channel[0],"User channel fetched successfully from the first pipeline"))
+
+        })
+
+        //we are now intrested to diplay watch history
+        //we will get list of videos here; we will 'join' user and videos
+        //using watch history in user we can get multiple documents 
+        //but in videos; owner is again user , we will do nested lookup; one lookup for user to videos (from watch history) and second lookup from videos to user(for owner)
+        //we will do nested lookup; as we cannot chain it further down
+        //in second lookup, we can pick what we want
+        //in first lookup, we will find half of the document of videos; when we do the next lookup we can then find the perfect document
+
+        //______coode to fetch watch history of the user____
+
+        const getWatchHistory = asyncHandler(async(req,res)=>{
+
+            //req.User._id//here in this, we get the string (343s436as6f6434344b1)(refer to any id of mongoDB)the entire id which starts as 'ObjectId('343s436as6f6434344b1')',mongoose behind the scene converts this into Mongodb object ID
+
+
+            const user = await User.aggregate([
+                {
+                    $match:{
+                        //we cannot mention _id:req.user._id to find the id directly;here mongoose does not work, aggregation pipeline directly works
+                        _id:new mongoose.Types.ObjectId(req.user._id)//creating objectId of mongoose directly here  
+                    }
+                },
+                {
+                    $lookup: {
+                    from:"videos",
+                    localField:"watchHistory",
+                    foreignField:"_id",
+                    as:"watchHistory",
+                    //creating subpipelines in $ lookup 
+                    pipeline:[
+                        {//now we are in videos; lookup pipeline in videos now
+                            $lookup:{
+                                from:"users",
+                                localField:"owner",
+                                foreignField:"_id",
+                                as:"owner",
+                                //further adding another pipeline, as we are having multiple documets as in username, avatar, fullname,password
+                                pipeline:[
+                                    {
+                                        $project:{//this project will go into the owner field only
+                                            fullname:1,
+                                            username:1,
+                                            avatar:1
+
+                                        }
+                                    }
+                                ]
+
+                            }
+                        },//since we are having an array; we will get first value which will give all values eventually
+                        //much easier solution to add another pipeline
+                        {
+                            $addFields:{
+                                owner:{//we can also provide array here(arrayElementsAt); but $ first makes much easier to frontend engineer
+                                    $first:"$owner"//getting the first element from 'field owner'
+                                    //the front end engineer can use dot and get values from owner field
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+            ])
+            return res.status(200).json( new ApiResponse (200,user[0].watchHistory,"watch history fetched successfully"))//here it requires only watch history, we can provide entire user but only giving watch history here for the response
+        })
+
+
+    
+
+
+export {registerUser,logInUser,logOutUser,refreshAccssToken,changeCurrentPassword,getCurrentUser,updateAccountDetails,updateUserAvatar,updateUserCoverImage,getUserChannelProfile,getWatchHistory}
