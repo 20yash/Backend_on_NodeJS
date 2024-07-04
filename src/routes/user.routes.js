@@ -67,7 +67,7 @@ router.route('/avatar').patch(verifyJWT,upload.single("avatar"),updateUserAvatar
 
 //route for updating user cover image; again this is coming from req.files, we will use multer middleware as well here
 
-router.route('/cover-image').patch(verifyJWT,upload.single("/coverImage"),updateUserCoverImage)
+router.route('/cover-image').patch(verifyJWT,upload.single("coverImage"),updateUserCoverImage)
 //also, fetching from user.file not user.file; using upload.single as we need only one file to be updated
 
 
